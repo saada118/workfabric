@@ -1,15 +1,21 @@
+import Navbar from "./components/Navbar";
 import { Routes, Route } from "react-router-dom";
 import Home from "./pages/Home";
-import Designer from "./pages/Designer";
 import CMS from "./pages/CMS";
+import Designer from "./pages/Designer";
 
 function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/designer/:productId" element={<Designer />} />
-      <Route path="/cms" element={<CMS />} />
-    </Routes>
+    <>
+      <Navbar />
+      <div className="container mt-4">
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/cms" element={<CMS />} />
+          <Route path="/designer/:id" element={<Designer />} />
+        </Routes>
+      </div>
+    </>
   );
 }
 

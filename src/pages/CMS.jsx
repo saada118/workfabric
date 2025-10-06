@@ -1,178 +1,221 @@
 // src/pages/CMS.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
+import { useAppContext } from "../context/AppContext";
 
 const CMS = () => {
   const [activeTab, setActiveTab] = useState("products");
-  const [products, setProducts] = useState([]);
-  const [cliparts, setCliparts] = useState([]);
-  const [backgrounds, setBackgrounds] = useState([]);
 
-  // Load existing data from localStorage
-  useEffect(() => {
-    setProducts(JSON.parse(localStorage.getItem("cms_products")) || []);
-    setCliparts(JSON.parse(localStorage.getItem("cms_cliparts")) || []);
-    setBackgrounds(JSON.parse(localStorage.getItem("cms_backgrounds")) || []);
-  }, []);
+  const {
+    products,
+    setProducts,
+    backgrounds,
+    setBackgrounds,
+    cliparts,
+    setCliparts,
+  } = useAppContext();
 
-  const saveData = (key, data) => {
-    localStorage.setItem(key, JSON.stringify(data));
-  };
-
-  const handleFileUpload = (e, type) => {
-    const files = Array.from(e.target.files);
-    const newItems = files.map((file) => ({
-      name: file.name,
-      url: URL.createObjectURL(file),
-    }));
-
-    if (type === "cliparts") {
-      const updated = [...cliparts, ...newItems];
-      setCliparts(updated);
-      saveData("cms_cliparts", updated);
-    } else if (type === "backgrounds") {
-      const updated = [...backgrounds, ...newItems];
-      setBackgrounds(updated);
-      saveData("cms_backgrounds", updated);
-    }
-  };
+  const [newProduct, setNewProduct] = useState({
+    name: "",
+    image: "",
+    model: "",
+  });
 
   const handleAddProduct = (e) => {
     e.preventDefault();
-    const name = e.target.name.value;
-    const model = e.target.model.value;
-    const thumbnail = e.target.thumbnail.files[0];
+    if (!newProduct.name || !newProduct.image || !newProduct.model) {
+      alert("Please fill all product fields!");
+      return;
+    }
+    const updatedProducts = [
+      ...products,
+      { ...newProduct, id: Date.now().toString() },
+    ];
+    setProducts(updatedProducts);
+    localStorage.setItem("products", JSON.stringify(updatedProducts));
+    setNewProduct({ name: "", image: "", model: "" });
+  };
 
-    if (!name || !model || !thumbnail) return alert("All fields required");
+  const handleAddBackground = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      const updated = [...backgrounds, url];
+      setBackgrounds(updated);
+      localStorage.setItem("backgrounds", JSON.stringify(updated));
+    }
+  };
 
-    const newProduct = {
-      id: name.toLowerCase().replace(/\s+/g, "-"),
-      name,
-      model,
-      thumbnail: URL.createObjectURL(thumbnail),
-    };
-    const updated = [...products, newProduct];
-    setProducts(updated);
-    saveData("cms_products", updated);
-    e.target.reset();
+  const handleAddClipart = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      const updated = [...cliparts, url];
+      setCliparts(updated);
+      localStorage.setItem("cliparts", JSON.stringify(updated));
+    }
   };
 
   return (
-    <div className="p-6 bg-gray-100 min-h-screen">
-      <h1 className="text-3xl font-bold mb-6">CMS Dashboard</h1>
+    <div className="py-5 bg-light min-vh-100">
+      <div className="container">
+        <h2 className="mb-4 text-primary text-center">CMS Dashboard — Manage Assets</h2>
 
-      <div className="flex gap-4 mb-6">
-        {["products", "cliparts", "backgrounds"].map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 rounded ${
-              activeTab === tab ? "bg-blue-600 text-white" : "bg-gray-300"
-            }`}
-          >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
-      </div>
+        {/* Tabs */}
+        <ul className="nav nav-tabs justify-content-center mb-4">
+          {["products", "backgrounds", "cliparts"].map((tab) => (
+            <li className="nav-item" key={tab}>
+              <button
+                className={`nav-link ${activeTab === tab ? "active" : ""}`}
+                onClick={() => setActiveTab(tab)}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            </li>
+          ))}
+        </ul>
 
-      {activeTab === "products" && (
-        <div>
-          <form
-            onSubmit={handleAddProduct}
-            className="bg-white p-4 rounded shadow mb-6"
-          >
-            <h2 className="text-xl font-semibold mb-2">Add New Product</h2>
-            <div className="grid grid-cols-3 gap-4">
-              <input
-                type="text"
-                name="name"
-                placeholder="Product Name"
-                className="border p-2 rounded"
-              />
-              <input
-                type="text"
-                name="model"
-                placeholder="Model File Path (e.g. /models/tshirt.obj)"
-                className="border p-2 rounded"
-              />
-              <input
-                type="file"
-                name="thumbnail"
-                accept="image/*"
-                className="border p-2 rounded"
-              />
-            </div>
-            <button
-              type="submit"
-              className="mt-4 bg-green-600 text-white px-4 py-2 rounded"
+        {/* Products Tab */}
+        {activeTab === "products" && (
+          <>
+            <form
+              onSubmit={handleAddProduct}
+              className="card shadow-sm p-4 mb-4 mx-auto"
+              style={{ maxWidth: "600px" }}
             >
-              Add Product
-            </button>
-          </form>
+              <h5 className="card-title mb-3">Add Product</h5>
 
-          <div className="grid grid-cols-4 gap-4">
-            {products.map((p, i) => (
-              <div key={i} className="bg-white p-2 rounded shadow text-center">
-                <img
-                  src={p.thumbnail}
-                  alt={p.name}
-                  className="h-24 w-full object-cover rounded mb-2"
+              <div className="mb-3">
+                <label className="form-label">Product Name</label>
+                <input
+                  type="text"
+                  value={newProduct.name}
+                  onChange={(e) =>
+                    setNewProduct({ ...newProduct, name: e.target.value })
+                  }
+                  className="form-control"
+                  placeholder="e.g. Custom Mug"
                 />
-                <h3 className="font-semibold">{p.name}</h3>
-                <p className="text-sm text-gray-600">{p.model}</p>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {activeTab === "cliparts" && (
-        <div>
-          <h2 className="text-xl font-semibold mb-2">Upload Cliparts</h2>
-          <input
-            type="file"
-            multiple
-            accept="image/*"
-            onChange={(e) => handleFileUpload(e, "cliparts")}
-            className="mb-4"
-          />
-          <div className="grid grid-cols-6 gap-2">
-            {cliparts.map((a, i) => (
-              <img
-                key={i}
-                src={a.url}
-                alt={a.name}
-                className="h-20 w-20 object-cover rounded border"
-              />
-            ))}
-          </div>
-        </div>
-      )}
+              <div className="mb-3">
+                <label className="form-label">Product Image</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      const url = URL.createObjectURL(file);
+                      setNewProduct({ ...newProduct, image: url });
+                    }
+                  }}
+                  className="form-control"
+                />
+              </div>
 
-      {activeTab === "backgrounds" && (
-        <div>
-          <h2 className="text-xl font-semibold mb-2">Upload Backgrounds</h2>
-          <input
-            type="file"
-            multiple
-            accept="image/*"
-            onChange={(e) => handleFileUpload(e, "backgrounds")}
-            className="mb-4"
-          />
-          <div className="grid grid-cols-6 gap-2">
-            {backgrounds.map((a, i) => (
-              <img
-                key={i}
-                src={a.url}
-                alt={a.name}
-                className="h-20 w-20 object-cover rounded border"
-              />
-            ))}
+              <div className="mb-3">
+                <label className="form-label">3D Model (.obj)</label>
+                <input
+                  type="file"
+                  accept=".obj"
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      const url = URL.createObjectURL(file);
+                      setNewProduct({ ...newProduct, model: url });
+                    }
+                  }}
+                  className="form-control"
+                />
+              </div>
+
+              <button type="submit" className="btn btn-primary">
+                Add Product
+              </button>
+            </form>
+
+            {/* Display Products */}
+            <div className="row g-3">
+              {products.length === 0 ? (
+                <p className="text-muted text-center">No products added yet.</p>
+              ) : (
+                products.map((p) => (
+                  <div className="col-12 col-md-4" key={p.id}>
+                    <div className="card h-100 shadow-sm">
+                      {p.image && (
+                        <img
+                          src={p.image}
+                          alt={p.name}
+                          className="card-img-top"
+                          style={{ height: "180px", objectFit: "cover" }}
+                        />
+                      )}
+                      <div className="card-body d-flex flex-column">
+                        <h6 className="card-title">{p.name}</h6>
+                        <p className="text-muted small mt-auto">
+                          {p.model ? "3D Model uploaded ✅" : "No model"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Backgrounds Tab */}
+        {activeTab === "backgrounds" && (
+          <div className="card shadow-sm p-4">
+            <h5 className="mb-3">Upload Backgrounds</h5>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleAddBackground}
+              className="form-control mb-3"
+            />
+            <div className="row g-3">
+              {backgrounds.map((bg, i) => (
+                <div className="col-6 col-md-3" key={i}>
+                  <img
+                    src={bg}
+                    alt={`Background ${i}`}
+                    className="img-fluid rounded"
+                    style={{ height: "150px", objectFit: "cover", width: "100%" }}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Cliparts Tab */}
+        {activeTab === "cliparts" && (
+          <div className="card shadow-sm p-4">
+            <h5 className="mb-3">Upload Cliparts</h5>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleAddClipart}
+              className="form-control mb-3"
+            />
+            <div className="row g-3">
+              {cliparts.map((clip, i) => (
+                <div className="col-6 col-md-3" key={i}>
+                  <img
+                    src={clip}
+                    alt={`Clipart ${i}`}
+                    className="img-fluid rounded"
+                    style={{ height: "150px", objectFit: "contain", width: "100%" }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
 
 export default CMS;
-

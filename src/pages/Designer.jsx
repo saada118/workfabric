@@ -1,355 +1,365 @@
 // src/pages/Designer.jsx
 import React, { useEffect, useRef, useState } from "react";
-import * as fabric from "fabric";
-import * as THREE from "three";
-import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { useParams } from "react-router-dom";
-import { products } from "../data/products";
+import { fabric } from "fabric";
+import * as THREE from "three";
+import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
+import { useAppContext } from "../context/AppContext";
 
-export default function Designer() {
-  const { productId } = useParams();
-  const product = products.find((p) => p.id === productId) || null;
+const Designer = () => {
+  const { id } = useParams();
+  const { products, backgrounds, cliparts } = useAppContext();
+
+  const product =
+    products.find((p) => p.id === id) || products.find((p) => p.name === id);
 
   const canvasRef = useRef(null);
   const [canvas, setCanvas] = useState(null);
-  const [activeText, setActiveText] = useState(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
-  // 3D preview refs/state
-  const [showPreview, setShowPreview] = useState(false);
-  const [modelURL, setModelURL] = useState(product ? product.model : null); // default to product model
-  const threeContainerRef = useRef(null);
-  const threeSceneRef = useRef(null);
-  const threeRendererRef = useRef(null);
-  const threeMeshRef = useRef(null);
-
+  // Initialize Fabric canvas
   useEffect(() => {
-    // init fabric on the actual canvas DOM element
     const c = new fabric.Canvas(canvasRef.current, {
-      width: 800,
-      height: 600,
-      backgroundColor: "white",
+      backgroundColor: "#ffffff",
+      height: 400,
+      width: 600,
       preserveObjectStacking: true,
     });
     setCanvas(c);
 
-    const updateActiveObject = (e) => {
-      const obj = c.getActiveObject();
-      if (obj && obj.type === "textbox") setActiveText(obj);
-      else setActiveText(null);
-    };
-
-    c.on("selection:created", updateActiveObject);
-    c.on("selection:updated", updateActiveObject);
-    c.on("selection:cleared", () => setActiveText(null));
-
     return () => {
-      c.dispose();
+      try {
+        c.dispose();
+      } catch {}
     };
   }, []);
 
-  // allow overriding the product model by upload
-  const handleModelUpload = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    setModelURL(url);
-    console.log("Model override uploaded:", url);
-  };
-
-  // image upload (works with Fabric v6 via native img)
+  // ------------------ Canvas Toolbar Actions ------------------
+  
+  // Add multiple images
   const handleImageUpload = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file || !canvas) return;
+    const files = e.target.files;
+    if (!files || !canvas) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result;
-      const imgEl = new Image();
-      imgEl.src = dataUrl;
-      imgEl.onload = () => {
-        const fabricImg = new fabric.Image(imgEl, {
-          left: 50,
-          top: 50,
-          scaleX: 0.3,
-          scaleY: 0.3,
-          selectable: true,
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        fabric.Image.fromURL(ev.target.result, (img) => {
+          img.scaleToWidth(300);
+          img.set({
+            left: canvas.getWidth() / 2 - img.getScaledWidth() / 2,
+            top: 80,
+          });
+          canvas.add(img);
+          canvas.setActiveObject(img);
+          canvas.renderAll();
         });
-        canvas.add(fabricImg);
-        canvas.setActiveObject(fabricImg);
-        canvas.requestRenderAll();
       };
-      imgEl.onerror = () => console.error("Native image load failed");
-    };
-    reader.readAsDataURL(file);
+      reader.readAsDataURL(file);
+    });
   };
 
-  // add text
-  const addText = () => {
+  // Add text
+  const handleAddText = () => {
     if (!canvas) return;
-    const text = new fabric.Textbox("Enter text", {
-      left: 120,
-      top: 120,
-      fontSize: 36,
+    const text = new fabric.IText("Edit me", {
+      left: 100,
+      top: 100,
+      fontSize: 26,
       fill: "#000000",
-      fontFamily: "Arial",
-      width: 400,
+      selectable: true,
     });
     canvas.add(text);
     canvas.setActiveObject(text);
-    canvas.requestRenderAll();
-    text.enterEditing();
-    text.selectAll();
+    canvas.renderAll();
+    text.enterEditing && text.enterEditing();
   };
 
-  // delete
-  const deleteSelected = () => {
+  // Delete selected item
+  const handleDeleteSelected = () => {
     if (!canvas) return;
-    const actives = canvas.getActiveObjects();
-    if (!actives.length) return;
-    actives.forEach((o) => canvas.remove(o));
-    canvas.discardActiveObject().requestRenderAll();
-    setActiveText(null);
-  };
-
-  // text controls
-  const changeTextColor = (e) => {
-    if (activeText) {
-      activeText.set("fill", e.target.value);
-      canvas.requestRenderAll();
-    }
-  };
-  const changeFontSize = (e) => {
-    if (activeText) {
-      activeText.set("fontSize", parseInt(e.target.value || 12, 10));
-      canvas.requestRenderAll();
-    }
-  };
-  const changeFontFamily = (e) => {
-    if (activeText) {
-      activeText.set("fontFamily", e.target.value);
-      canvas.requestRenderAll();
+    const activeObject = canvas.getActiveObject();
+    if (activeObject) {
+      canvas.remove(activeObject);
+      canvas.discardActiveObject();
+      canvas.renderAll();
+    } else {
+      alert("No object selected!");
     }
   };
 
-  // export image
-  const exportImage = () => {
+  // Set background
+  const handleSetBackground = (bgUrl) => {
     if (!canvas) return;
-    const data = canvas.toDataURL({ format: "png" });
-    const link = document.createElement("a");
-    link.href = data;
-    link.download = `design-${productId || "custom"}.png`;
-    link.click();
+    fabric.Image.fromURL(
+      bgUrl,
+      (img) => {
+        const canvasW = canvas.getWidth();
+        const canvasH = canvas.getHeight();
+        const scale = Math.max(canvasW / img.width, canvasH / img.height);
+        img.scale(scale);
+        img.set({
+          left: (canvasW - img.getScaledWidth()) / 2,
+          top: (canvasH - img.getScaledHeight()) / 2,
+          selectable: false,
+          evented: false,
+        });
+        canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+      },
+      { crossOrigin: "anonymous" }
+    );
   };
 
-  // -------------------------------------------------------------------
-  // 3D preview: create scene and load model (with canvas texture)
-  // -------------------------------------------------------------------
+  // Add clipart
+  const handleAddClipart = (clipUrl) => {
+    if (!canvas) return;
+    fabric.Image.fromURL(
+      clipUrl,
+      (img) => {
+        img.scaleToWidth(140);
+        img.set({ left: 120, top: 120 });
+        canvas.add(img);
+        canvas.setActiveObject(img);
+        canvas.renderAll();
+      },
+      { crossOrigin: "anonymous" }
+    );
+  };
+
+  // Open/close 3D preview
   const handlePreview = () => {
-    if (!canvas) return;
-    const textureURL = canvas.toDataURL({ format: "png" });
-    setShowPreview(true);
-    // init Three after modal is rendered
-    setTimeout(() => initThree(textureURL), 50);
+    if (!product?.model && !product?.modelUrl) {
+      alert("No 3D model found for this product.");
+      return;
+    }
+    setPreviewOpen(true);
   };
+  const handleClosePreview = () => setPreviewOpen(false);
 
-  const initThree = (textureURL) => {
-    if (!threeContainerRef.current) return;
-    if (threeSceneRef.current) return; // already initialized
+  return (
+    <div className="py-5 bg-light min-vh-100">
+      <div className="container">
+        <h2 className="mb-4 text-center">{`Designing: ${product ? product.name : "Unknown Product"}`}</h2>
 
-    const width = 800;
-    const height = 500;
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    camera.position.set(0, 0, 2.5);
+        {/* Toolbar */}
+        <div className="d-flex flex-wrap gap-2 mb-4 justify-content-center">
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleImageUpload}
+            className="form-control form-control-sm"
+            style={{ maxWidth: "200px" }}
+          />
+          <button className="btn btn-primary" onClick={handleAddText}>
+            Add Text
+          </button>
+          <button className="btn btn-danger" onClick={handleDeleteSelected}>
+            Delete Selected
+          </button>
+          <button className="btn btn-success" onClick={handlePreview}>
+            Preview 3D
+          </button>
+        </div>
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(width, height);
-    threeContainerRef.current.appendChild(renderer.domElement);
+        {/* Layout: Sidebar left, Canvas right */}
+        <div className="d-flex flex-wrap gap-4">
+          {/* Sidebar */}
+          <div style={{ minWidth: 260, maxHeight: 400, overflowY: "auto" }}>
+            {/* Backgrounds */}
+            <div className="mb-4 card shadow-sm p-3">
+              <h5 className="mb-2">Backgrounds</h5>
+              <div className="row row-cols-2 g-2">
+                {backgrounds.length === 0 ? (
+                  <div className="text-muted small">No backgrounds</div>
+                ) : (
+                  backgrounds.map((b, i) => (
+                    <div key={i} className="col">
+                      <img
+                        src={b}
+                        alt={`bg-${i}`}
+                        className="img-fluid rounded border cursor-pointer"
+                        style={{ height: "80px", objectFit: "cover", width: "100%" }}
+                        onClick={() => handleSetBackground(b)}
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
 
-    const ambient = new THREE.AmbientLight(0xffffff, 1.2);
-    scene.add(ambient);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-    dir.position.set(2, 2, 5);
-    scene.add(dir);
+            {/* Cliparts */}
+            <div className="card shadow-sm p-3">
+              <h5 className="mb-2">Cliparts</h5>
+              <div className="row row-cols-2 g-2">
+                {cliparts.length === 0 ? (
+                  <div className="text-muted small">No cliparts</div>
+                ) : (
+                  cliparts.map((c, i) => (
+                    <div key={i} className="col">
+                      <img
+                        src={c}
+                        alt={`clip-${i}`}
+                        className="img-fluid rounded border cursor-pointer"
+                        style={{ height: "80px", objectFit: "contain", width: "100%" }}
+                        onClick={() => handleAddClipart(c)}
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
 
-    const texture = new THREE.TextureLoader().load(textureURL);
+          {/* Canvas */}
+          <div className="bg-white border rounded shadow p-2 flex-grow-1" style={{ maxWidth: "620px" }}>
+            <canvas ref={canvasRef} />
+          </div>
+        </div>
 
-    // helper to center + scale
-    const centerAndScale = (obj) => {
-      const box = new THREE.Box3().setFromObject(obj);
-      const size = new THREE.Vector3();
-      box.getSize(size);
-      const maxDim = Math.max(size.x, size.y, size.z);
-      const s = maxDim > 0 ? 1.5 / maxDim : 1;
-      obj.scale.setScalar(s);
-      // re-calc center and move to origin
-      const box2 = new THREE.Box3().setFromObject(obj);
-      const center = box2.getCenter(new THREE.Vector3());
-      obj.position.sub(center);
-    };
+        {/* 3D Preview Modal */}
+        {previewOpen && (
+          <div className="modal show d-block" tabIndex="-1">
+            <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: "600px" }}>
+              <div className="modal-content position-relative">
+                <div className="modal-header">
+                  <h5 className="modal-title">3D Preview</h5>
+                  <button type="button" className="btn-close" onClick={handleClosePreview} />
+                </div>
+                <div
+                  className="modal-body p-0"
+                  style={{ height: "300px", overflow: "hidden", width: "100%" }}
+                >
+                  <ThreeDPreview modelUrl={product?.model || product?.modelUrl} canvas={canvas} />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
-    // load model if available
-    if (modelURL) {
+// ------------------- ThreeDPreview with Live Canvas Texture -------------------
+const ThreeDPreview = ({ modelUrl, canvas }) => {
+  const mountRef = useRef();
+  const controlsRef = useRef(null);
+  const frameIdRef = useRef(null);
+  const textureRef = useRef(null);
+  const objectRef = useRef(null);
+
+  useEffect(() => {
+    if (!modelUrl || !mountRef.current || !canvas) return;
+
+    const init = () => {
+      const width = mountRef.current.clientWidth;
+      const height = mountRef.current.clientHeight;
+      if (width === 0 || height === 0) {
+        setTimeout(init, 50);
+        return;
+      }
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xf7f7f7);
+
+      const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      mountRef.current.appendChild(renderer.domElement);
+
+      const ambient = new THREE.AmbientLight(0xffffff, 1.0);
+      scene.add(ambient);
+      const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+      dir.position.set(5, 10, 7.5);
+      scene.add(dir);
+
+      textureRef.current = new THREE.CanvasTexture(canvas.getElement());
+
       const loader = new OBJLoader();
+      const objectRoot = new THREE.Group();
+      scene.add(objectRoot);
+      objectRef.current = objectRoot;
+
       loader.load(
-        modelURL,
+        modelUrl,
         (obj) => {
-          console.log("OBJ loaded", obj);
           obj.traverse((child) => {
             if (child.isMesh) {
               child.material = new THREE.MeshStandardMaterial({
-                map: texture,
-                metalness: 0.1,
-                roughness: 0.9,
+                map: textureRef.current,
+                transparent: true,
               });
               child.material.needsUpdate = true;
             }
           });
-          centerAndScale(obj);
-          scene.add(obj);
-          threeMeshRef.current = obj;
+
+          objectRoot.add(obj);
+
+          const box = new THREE.Box3().setFromObject(objectRoot);
+          const size = box.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const center = box.getCenter(new THREE.Vector3());
+          objectRoot.position.x -= center.x;
+          objectRoot.position.y -= center.y;
+          objectRoot.position.z -= center.z;
+
+          // Fit model fully in view
+          const fov = camera.fov * (Math.PI / 180);
+          const desiredDistance = (maxDim / 2) / Math.tan(fov / 2) * 1.1;
+          camera.position.set(0, 0, desiredDistance);
+          camera.lookAt(0, 0, 0);
+
+          // Controls
+          import("three/examples/jsm/controls/OrbitControls").then(({ OrbitControls }) => {
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = desiredDistance * 0.8;
+            controls.maxDistance = desiredDistance * 1.5;
+            controlsRef.current = controls;
+          });
         },
-        (xhr) => {
-          // optional progress
-          // console.log("OBJ progress", (xhr.loaded / xhr.total) * 100);
-        },
-        (err) => {
-          console.error("OBJ load error", err);
-          // fallback cube
-          const geom = new THREE.BoxGeometry(1.5, 1, 0.2);
-          const mat = new THREE.MeshBasicMaterial({ map: texture });
-          const mesh = new THREE.Mesh(geom, mat);
-          scene.add(mesh);
-          threeMeshRef.current = mesh;
-        }
+        undefined,
+        (err) => console.error("OBJ load error:", err)
       );
-    } else {
-      const geom = new THREE.BoxGeometry(1.5, 1, 0.2);
-      const mat = new THREE.MeshBasicMaterial({ map: texture });
-      const mesh = new THREE.Mesh(geom, mat);
-      scene.add(mesh);
-      threeMeshRef.current = mesh;
-    }
 
-    // animate
-    const clock = new THREE.Clock();
-    const animate = () => {
-      if (threeMeshRef.current) threeMeshRef.current.rotation.y += 0.01;
-      renderer.render(scene, camera);
-      requestAnimationFrame(animate);
+      const animate = () => {
+        frameIdRef.current = requestAnimationFrame(animate);
+        if (objectRoot) objectRoot.rotation.y += 0.005;
+        if (controlsRef.current) controlsRef.current.update();
+        if (textureRef.current) textureRef.current.needsUpdate = true;
+        renderer.render(scene, camera);
+      };
+      animate();
+
+      const onResize = () => {
+        if (!mountRef.current) return;
+        const w = mountRef.current.clientWidth;
+        const h = mountRef.current.clientHeight;
+        renderer.setSize(w, h);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      };
+      window.addEventListener("resize", onResize);
+
+      return () => {
+        window.removeEventListener("resize", onResize);
+        if (frameIdRef.current) cancelAnimationFrame(frameIdRef.current);
+        if (controlsRef.current) controlsRef.current.dispose();
+        renderer.dispose();
+        if (mountRef.current && mountRef.current.firstChild) {
+          mountRef.current.removeChild(mountRef.current.firstChild);
+        }
+      };
     };
-    animate();
 
-    threeSceneRef.current = scene;
-    threeRendererRef.current = renderer;
-  };
+    init();
+  }, [modelUrl, canvas]);
 
-  const closePreview = () => {
-    setShowPreview(false);
-    if (threeRendererRef.current) {
-      try {
-        threeRendererRef.current.forceContextLoss();
-      } catch (e) {}
-      threeRendererRef.current.domElement.remove();
-      threeSceneRef.current = null;
-      threeRendererRef.current = null;
-      threeMeshRef.current = null;
-    }
-  };
+  return <div ref={mountRef} className="w-100 h-100" />;
+};
 
-  // cleanup three when product changes/unmount
-  useEffect(() => {
-    return () => {
-      if (threeRendererRef.current) {
-        try { threeRendererRef.current.forceContextLoss(); } catch (e) {}
-      }
-    };
-  }, [productId]);
-
-  return (
-    <div style={{ display: "flex", gap: 12, padding: 12 }}>
-      <aside style={{ width: 280, padding: 12, borderRight: "1px solid #eee" }}>
-        <h2>{product ? product.name : "Designer"}</h2>
-
-        <div style={{ marginBottom: 12 }}>
-          <label>
-            Upload Image:
-            <input type="file" accept="image/*" onChange={handleImageUpload} />
-          </label>
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          <label>
-            Upload .obj (override product model):
-            <input type="file" accept=".obj" onChange={handleModelUpload} />
-          </label>
-          <div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
-            Current model: {modelURL ? modelURL : "none"}
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <button onClick={addText}>Add Text</button>
-          <button onClick={deleteSelected}>Delete</button>
-          <button onClick={exportImage}>Export PNG</button>
-        </div>
-
-        <div style={{ marginTop: 8 }}>
-          <button onClick={handlePreview}>Preview 3D</button>
-        </div>
-
-        {activeText && (
-          <div style={{ marginTop: 18 }}>
-            <h4>Text controls</h4>
-            <div>
-              <label>
-                Color:{" "}
-                <input
-                  type="color"
-                  onChange={changeTextColor}
-                  value={typeof activeText.fill === "string" && activeText.fill.startsWith("#") ? activeText.fill : "#000000"}
-                />
-              </label>
-            </div>
-            <div>
-              <label>
-                Size:{" "}
-                <input type="number" defaultValue={activeText.fontSize} onChange={changeFontSize} />
-              </label>
-            </div>
-            <div>
-              <label>
-                Font:{" "}
-                <select defaultValue={activeText.fontFamily} onChange={changeFontFamily}>
-                  <option>Arial</option>
-                  <option>Times New Roman</option>
-                  <option>Courier New</option>
-                  <option>Verdana</option>
-                  <option>Georgia</option>
-                </select>
-              </label>
-            </div>
-          </div>
-        )}
-      </aside>
-
-      <main style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
-        <canvas ref={canvasRef} />
-      </main>
-
-      {showPreview && (
-        <div style={{
-            position: "fixed",
-            top: 0, left: 0, width: "100vw", height: "100vh",
-            background: "rgba(0,0,0,0.6)", display: "flex", justifyContent: "center", alignItems: "center",
-            zIndex: 9999
-          }}>
-          <div style={{ width: 820, background: "#fff", padding: 12, borderRadius: 8, position: "relative" }}>
-            <button onClick={closePreview} style={{ position: "absolute", top: 8, right: 8 }}>✕</button>
-            <div ref={threeContainerRef} />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+export default Designer;
